@@ -1,0 +1,49 @@
+# Mirror of gradio-app/trackio .github/workflows/pr-wheel-preview-build.yml (benign base version)
+name: PR wheel preview build
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheel (stand-in)
+        run: |
+          mkdir -p dist
+          echo "fake wheel" > dist/trackio-0.0.0-py3-none-any.whl
+
+      - name: Write metadata
+        run: |
+          python3 << 'PY'
+          import json
+          from pathlib import Path
+          wheels = sorted(Path("dist").glob("trackio-*.whl"))
+          meta = {
+              "pr_number": ${{ github.event.pull_request.number }},
+              "sha": "${{ github.event.pull_request.head.sha }}",
+              "wheel_basename": wheels[0].name,
+          }
+          Path("output.json").write_text(json.dumps(meta))
+          PY
+          cat output.json
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackio-wheel
+          path: dist/*.whl
+
+      - name: Upload metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-wheel-preview-metadata
+          path: output.json
