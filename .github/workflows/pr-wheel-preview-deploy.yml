@@ -1,0 +1,60 @@
+# Byte-faithful mirror of gradio-app/trackio .github/workflows/pr-wheel-preview-deploy.yml
+name: PR wheel preview deploy
+
+on:
+  workflow_run:
+    workflows: ["PR wheel preview build"]
+    types:
+      - completed
+
+concurrency:
+  group: pr-wheel-deploy-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      pr_number: ${{ steps.meta.outputs.pr_number }}
+      sha: ${{ steps.meta.outputs.sha }}
+      wheel_basename: ${{ steps.meta.outputs.wheel_basename }}
+    steps:
+      - name: Download metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-wheel-preview-metadata
+          path: metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: trackio-wheel
+          path: wheel
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Show the attacker-controlled metadata
+        run: cat metadata/output.json
+
+      - name: Parse metadata
+        id: meta
+        run: |
+          echo "pr_number=$(jq -r .pr_number metadata/output.json)" >> $GITHUB_OUTPUT
+          echo "sha=$(jq -r .sha metadata/output.json)" >> $GITHUB_OUTPUT
+          echo "wheel_basename=$(jq -r .wheel_basename metadata/output.json)" >> $GITHUB_OUTPUT
+
+      # Same shape as trackio's "Upload wheel to Hugging Face bucket" step:
+      # secret in env, untrusted value interpolated into the run script.
+      - name: Upload wheel to Hugging Face bucket
+        env:
+          HF_TOKEN: ${{ secrets.HF_PYPI_PREVIEWS_TOKEN }}
+        run: |
+          wheel_file=$(find wheel -maxdepth 1 -type f -name "*.whl" -print -quit)
+          echo "hf buckets cp $wheel_file hf://buckets/trackio/trackio-wheels/${{ steps.meta.outputs.sha }}/"
